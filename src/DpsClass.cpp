@@ -201,6 +201,55 @@ int16_t DpsClass::getSingleResult(float &result)
     return DPS__FAIL_UNKNOWN;
 }
 
+int16_t DpsClass::getSingleResult(float &result, std::function<float(float)> transform)
+{
+    // abort if initialization failed
+    if (m_initFail)
+    {
+        return DPS__FAIL_INIT_FAILED;
+    }
+
+    // read finished bit for current opMode
+    int16_t rdy;
+    switch (m_opMode)
+    {
+    case CMD_TEMP: // temperature
+        rdy = readByteBitfield(config_registers[TEMP_RDY]);
+        break;
+    case CMD_PRS: // pressure
+        rdy = readByteBitfield(config_registers[PRS_RDY]);
+        break;
+    default: // DPS3xx not in command mode
+        return DPS__FAIL_TOOBUSY;
+    }
+    // read new measurement result
+    switch (rdy)
+    {
+    case DPS__FAIL_UNKNOWN: // could not read ready flag
+        return DPS__FAIL_UNKNOWN;
+    case 0: // ready flag not set, measurement still in progress
+        return DPS__FAIL_UNFINISHED;
+    case 1: // measurement ready, expected case
+        Mode oldMode = m_opMode;
+        m_opMode = IDLE; // opcode was automatically reset by DPS3xx
+        int32_t raw_val;
+        switch (oldMode)
+        {
+        case CMD_TEMP: // temperature
+            getRawResult(&raw_val, registerBlocks[TEMP]);
+            result = calcTemp(raw_val, transform);
+            return DPS__SUCCEEDED; // TODO
+        case CMD_PRS:              // pressure
+            getRawResult(&raw_val, registerBlocks[PRS]);
+            result = calcPressure(raw_val, transform);
+            return DPS__SUCCEEDED; // TODO
+        default:
+            return DPS__FAIL_UNKNOWN; // should already be filtered above
+        }
+    }
+    return DPS__FAIL_UNKNOWN;
+}
+
 int16_t DpsClass::measureTempOnce(float &result)
 {
     return measureTempOnce(result, m_tempOsr);
@@ -220,6 +269,27 @@ int16_t DpsClass::measureTempOnce(float &result, uint8_t oversamplingRate)
     delay(DPS3xx__BUSYTIME_FAILSAFE);
 
     ret = getSingleResult(result);
+    if (ret != DPS__SUCCEEDED)
+    {
+        standby();
+    }
+    return ret;
+}
+
+int16_t DpsClass::measureTempOnce(float &result, uint8_t oversamplingRate, std::function<float(float)> transform)
+{
+    // Start measurement
+    int16_t ret = startMeasureTempOnce(oversamplingRate);
+    if (ret != DPS__SUCCEEDED)
+    {
+        return ret;
+    }
+
+    // wait until measurement is finished
+    delay(calcBusyTime(0U, m_tempOsr) / DPS__BUSYTIME_SCALING);
+    delay(DPS3xx__BUSYTIME_FAILSAFE);
+
+    ret = getSingleResult(result, transform);
     if (ret != DPS__SUCCEEDED)
     {
         standby();
@@ -277,6 +347,27 @@ int16_t DpsClass::measurePressureOnce(float &result, uint8_t oversamplingRate)
     delay(DPS3xx__BUSYTIME_FAILSAFE);
 
     ret = getSingleResult(result);
+    if (ret != DPS__SUCCEEDED)
+    {
+        standby();
+    }
+    return ret;
+}
+
+int16_t DpsClass::measurePressureOnce(float &result, uint8_t oversamplingRate, std::function<float(float)> transform)
+{
+    // start the measurement
+    int16_t ret = startMeasurePressureOnce(oversamplingRate);
+    if (ret != DPS__SUCCEEDED)
+    {
+        return ret;
+    }
+
+    // wait until measurement is finished
+    delay(calcBusyTime(0U, m_prsOsr) / DPS__BUSYTIME_SCALING);
+    delay(DPS3xx__BUSYTIME_FAILSAFE);
+
+    ret = getSingleResult(result, transform);
     if (ret != DPS__SUCCEEDED)
     {
         standby();

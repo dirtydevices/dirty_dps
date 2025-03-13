@@ -32,8 +32,12 @@ protected:
     int16_t configPressure(uint8_t prs_mr, uint8_t prs_osr);
     int16_t readcoeffs(void);
     int16_t flushFIFO();
+
     float calcTemp(int32_t raw);
+    float calcTemp(int32_t raw, std::function<float(float)> transform);
+
     float calcPressure(int32_t raw);
+    float calcPressure(int32_t raw, std::function<float(float)> transform);
 };
 
 #endif

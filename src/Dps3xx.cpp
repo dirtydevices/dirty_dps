@@ -172,12 +172,49 @@ float Dps3xx::calcTemp(int32_t raw)
     return temp;
 }
 
+float Dps3xx::calcTemp(int32_t raw, std::function<float(float)> transform)
+{
+    float temp = raw;
+
+    // scale temperature according to scaling table and oversampling
+    temp /= scaling_facts[m_tempOsr];
+
+    // apply the transformation function
+    temp = transform(temp);
+
+    // update last measured temperature
+    // it will be used for pressure compensation
+    m_lastTempScal = temp;
+
+    // Calculate compensated temperature
+    temp = m_c0Half + m_c1 * temp;
+
+    return temp;
+}
+
 float Dps3xx::calcPressure(int32_t raw)
 {
     float prs = raw;
 
     // scale pressure according to scaling table and oversampling
     prs /= scaling_facts[m_prsOsr];
+
+    // Calculate compensated pressure
+    prs = m_c00 + prs * (m_c10 + prs * (m_c20 + prs * m_c30)) + m_lastTempScal * (m_c01 + prs * (m_c11 + prs * m_c21));
+
+    // return pressure
+    return prs;
+}
+
+float Dps3xx::calcPressure(int32_t raw, std::function<float(float)> transform)
+{
+    float prs = raw;
+
+    // scale pressure according to scaling table and oversampling
+    prs /= scaling_facts[m_prsOsr];
+
+    // apply the transformation function
+    prs = transform(prs);
 
     // Calculate compensated pressure
     prs = m_c00 + prs * (m_c10 + prs * (m_c20 + prs * m_c30)) + m_lastTempScal * (m_c01 + prs * (m_c11 + prs * m_c21));

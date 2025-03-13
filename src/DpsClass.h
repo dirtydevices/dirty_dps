@@ -107,6 +107,21 @@ public:
     int16_t measureTempOnce(float &result, uint8_t oversamplingRate);
 
     /**
+     * performs one temperature measurement with specified oversamplingRate
+     *
+     * @param &result:              reference to a float where the result will be written
+     * @param oversamplingRate:     DPS__OVERSAMPLING_RATE_1, DPS__OVERSAMPLING_RATE_2,
+     *                              DPS__OVERSAMPLING_RATE_4 ... DPS__OVERSAMPLING_RATE_128,
+     *                              which are defined as integers 0 - 7
+     *                              The number of measurements equals to 2^n, if the value written to 
+     *                              the register field is n. 2^n internal measurements are combined to
+     *                              return a more exact measurement
+     * @param transform:            transformation function that is applied to the result
+     * @return   status code
+     */
+    int16_t measureTempOnce(float &result, uint8_t oversamplingRate, std::function<float(float)> transform);
+
+    /**
      * starts a single temperature measurement
      *
      * @return 	status code
@@ -141,6 +156,17 @@ public:
     int16_t measurePressureOnce(float &result, uint8_t oversamplingRate);
 
     /**
+     * performs one pressure measurement with specified oversamplingRate
+     *
+     * @param &result:              reference to a float where the result will be written
+     * @param oversamplingRate:     DPS__OVERSAMPLING_RATE_1, DPS__OVERSAMPLING_RATE_2,
+     *                              DPS__OVERSAMPLING_RATE_4 ... DPS__OVERSAMPLING_RATE_128
+     * @param transform:            transformation function that is applied to the result
+     * @return  status code
+     */
+    int16_t measurePressureOnce(float &result, uint8_t oversamplingRate, std::function<float(float)> transform);
+
+    /**
      * starts a single pressure measurement
      *
      * @return 	status code
@@ -163,6 +189,15 @@ public:
      * @return 	status code
      */
     int16_t getSingleResult(float &result);
+
+    /**
+     * gets the result a single temperature or pressure measurement in °C or Pa
+     *
+     * @param &result:              reference to a float value where the result will be written
+     * @param transform:            transformation function that is applied to the result
+     * @return 	status code
+     */
+    int16_t getSingleResult(float &result, std::function<float(float)> transform);
 
     /**
      * starts a continuous temperature measurement with specified measurement rate and oversampling rate
@@ -322,7 +357,11 @@ protected:
 
     virtual float calcTemp(int32_t raw) = 0;
 
+    virtual float calcTemp(int32_t raw, std::function<float(float)> transform) = 0;
+
     virtual float calcPressure(int32_t raw) = 0;
+
+    virtual float calcPressure(int32_t raw, std::function<float(float)> transform) = 0;
 
     int16_t enableFIFO();
 
