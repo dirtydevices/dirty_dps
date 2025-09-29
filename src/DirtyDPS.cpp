@@ -1,27 +1,30 @@
-#include "DpsClass.h"
-using namespace dps;
+#include "DirtyDPS.h"
 
-const int32_t DpsClass::scaling_facts[DPS__NUM_OF_SCAL_FACTS] = {524288, 1572864, 3670016, 7864320, 253952, 516096, 1040384, 2088960};
+using namespace dps;
+using namespace dps3xx;
+
+const int32_t DirtyDPS::scaling_facts[DPS__NUM_OF_SCAL_FACTS] = {524288, 1572864, 3670016, 7864320, 253952, 516096, 1040384, 2088960};
 
 ////////  Constructor, Destructor, begin, end  ////////
 
-DpsClass::DpsClass(void)
+DirtyDPS::DirtyDPS(void)
 {
     // assume that initialization has failed before it has been done
     m_initFail = 1U;
+    m_threeWire = 0U;
 }
 
-DpsClass::~DpsClass(void)
+DirtyDPS::~DirtyDPS(void)
 {
     end();
 }
 
-void DpsClass::begin(TwoWire &bus)
+void DirtyDPS::begin(TwoWire &bus)
 {
     begin(bus, DPS__STD_SLAVE_ADDRESS);
 }
 
-void DpsClass::begin(TwoWire &bus, uint8_t slaveAddress)
+void DirtyDPS::begin(TwoWire &bus, uint8_t slaveAddress)
 {
     // this flag will show if the initialization was successful
     m_initFail = 0U;
@@ -39,15 +42,12 @@ void DpsClass::begin(TwoWire &bus, uint8_t slaveAddress)
     init();
 }
 
-#ifndef DPS_DISABLESPI
-void DpsClass::begin(SPIClass &bus, int32_t chipSelect)
+void DirtyDPS::begin(SPIClass &bus, int32_t chipSelect)
 {
     begin(bus, chipSelect, 0U);
 }
-#endif
 
-#ifndef DPS_DISABLESPI
-void DpsClass::begin(SPIClass &bus, int32_t chipSelect, uint8_t threeWire)
+void DirtyDPS::begin(SPIClass &bus, int32_t chipSelect, uint8_t threeWire)
 {
     // this flag will show if the initialization was successful
     m_initFail = 0U;
@@ -81,29 +81,28 @@ void DpsClass::begin(SPIClass &bus, int32_t chipSelect, uint8_t threeWire)
 
     init();
 }
-#endif
 
-void DpsClass::end(void)
+void DirtyDPS::end(void)
 {
     standby();
 }
 
-////////  Declaration of other public functions starts here  ////////
+////////  Public helpers  ////////
 
-uint8_t DpsClass::getProductId(void)
+uint8_t DirtyDPS::getProductId(void)
 {
     return m_productID;
 }
 
-uint8_t DpsClass::getRevisionId(void)
+uint8_t DirtyDPS::getRevisionId(void)
 {
     return m_revisionID;
 }
 
-int16_t DpsClass::getContResults(float *tempBuffer,
+int16_t DirtyDPS::getContResults(float *tempBuffer,
                                  uint8_t &tempCount,
                                  float *prsBuffer,
-                                 uint8_t &prsCount, RegMask_t fifo_empty_reg)
+                                 uint8_t &prsCount)
 {
     if (m_initFail)
     {
@@ -123,7 +122,7 @@ int16_t DpsClass::getContResults(float *tempBuffer,
     prsCount = 0U;
 
     // while FIFO is not empty
-    while (readByteBitfield(fifo_empty_reg) == 0)
+    while (readByteBitfield(registers[FIFO_EMPTY]) == 0)
     {
         int32_t raw_result;
         float result;
@@ -152,7 +151,7 @@ int16_t DpsClass::getContResults(float *tempBuffer,
     return DPS__SUCCEEDED;
 }
 
-int16_t DpsClass::getSingleResult(float &result)
+int16_t DirtyDPS::getSingleResult(float &result)
 {
     // abort if initialization failed
     if (m_initFail)
@@ -170,7 +169,7 @@ int16_t DpsClass::getSingleResult(float &result)
     case CMD_PRS: // pressure
         rdy = readByteBitfield(config_registers[PRS_RDY]);
         break;
-    default: // DPS3xx not in command mode
+    default: // not in command mode
         return DPS__FAIL_TOOBUSY;
     }
     // read new measurement result
@@ -189,11 +188,11 @@ int16_t DpsClass::getSingleResult(float &result)
         case CMD_TEMP: // temperature
             getRawResult(&raw_val, registerBlocks[TEMP]);
             result = calcTemp(raw_val);
-            return DPS__SUCCEEDED; // TODO
-        case CMD_PRS:              // pressure
+            return DPS__SUCCEEDED;
+        case CMD_PRS: // pressure
             getRawResult(&raw_val, registerBlocks[PRS]);
             result = calcPressure(raw_val);
-            return DPS__SUCCEEDED; // TODO
+            return DPS__SUCCEEDED;
         default:
             return DPS__FAIL_UNKNOWN; // should already be filtered above
         }
@@ -201,7 +200,7 @@ int16_t DpsClass::getSingleResult(float &result)
     return DPS__FAIL_UNKNOWN;
 }
 
-int16_t DpsClass::getSingleResult(float &result, std::function<float(float)> transform)
+int16_t DirtyDPS::getSingleResult(float &result, std::function<float(float)> transform)
 {
     // abort if initialization failed
     if (m_initFail)
@@ -219,7 +218,7 @@ int16_t DpsClass::getSingleResult(float &result, std::function<float(float)> tra
     case CMD_PRS: // pressure
         rdy = readByteBitfield(config_registers[PRS_RDY]);
         break;
-    default: // DPS3xx not in command mode
+    default: // not in command mode
         return DPS__FAIL_TOOBUSY;
     }
     // read new measurement result
@@ -238,11 +237,11 @@ int16_t DpsClass::getSingleResult(float &result, std::function<float(float)> tra
         case CMD_TEMP: // temperature
             getRawResult(&raw_val, registerBlocks[TEMP]);
             result = calcTemp(raw_val, transform);
-            return DPS__SUCCEEDED; // TODO
-        case CMD_PRS:              // pressure
+            return DPS__SUCCEEDED;
+        case CMD_PRS: // pressure
             getRawResult(&raw_val, registerBlocks[PRS]);
             result = calcPressure(raw_val, transform);
-            return DPS__SUCCEEDED; // TODO
+            return DPS__SUCCEEDED;
         default:
             return DPS__FAIL_UNKNOWN; // should already be filtered above
         }
@@ -250,12 +249,12 @@ int16_t DpsClass::getSingleResult(float &result, std::function<float(float)> tra
     return DPS__FAIL_UNKNOWN;
 }
 
-int16_t DpsClass::measureTempOnce(float &result)
+int16_t DirtyDPS::measureTempOnce(float &result)
 {
     return measureTempOnce(result, m_tempOsr);
 }
 
-int16_t DpsClass::measureTempOnce(float &result, uint8_t oversamplingRate)
+int16_t DirtyDPS::measureTempOnce(float &result, uint8_t oversamplingRate)
 {
     // Start measurement
     int16_t ret = startMeasureTempOnce(oversamplingRate);
@@ -276,7 +275,7 @@ int16_t DpsClass::measureTempOnce(float &result, uint8_t oversamplingRate)
     return ret;
 }
 
-int16_t DpsClass::measureTempOnce(float &result, uint8_t oversamplingRate, std::function<float(float)> transform)
+int16_t DirtyDPS::measureTempOnce(float &result, uint8_t oversamplingRate, std::function<float(float)> transform)
 {
     // Start measurement
     int16_t ret = startMeasureTempOnce(oversamplingRate);
@@ -297,12 +296,12 @@ int16_t DpsClass::measureTempOnce(float &result, uint8_t oversamplingRate, std::
     return ret;
 }
 
-int16_t DpsClass::startMeasureTempOnce(void)
+int16_t DirtyDPS::startMeasureTempOnce(void)
 {
     return startMeasureTempOnce(m_tempOsr);
 }
 
-int16_t DpsClass::startMeasureTempOnce(uint8_t oversamplingRate)
+int16_t DirtyDPS::startMeasureTempOnce(uint8_t oversamplingRate)
 {
     // abort if initialization failed
     if (m_initFail)
@@ -328,12 +327,12 @@ int16_t DpsClass::startMeasureTempOnce(uint8_t oversamplingRate)
     return setOpMode(CMD_TEMP);
 }
 
-int16_t DpsClass::measurePressureOnce(float &result)
+int16_t DirtyDPS::measurePressureOnce(float &result)
 {
     return measurePressureOnce(result, m_prsOsr);
 }
 
-int16_t DpsClass::measurePressureOnce(float &result, uint8_t oversamplingRate)
+int16_t DirtyDPS::measurePressureOnce(float &result, uint8_t oversamplingRate)
 {
     // start the measurement
     int16_t ret = startMeasurePressureOnce(oversamplingRate);
@@ -354,7 +353,7 @@ int16_t DpsClass::measurePressureOnce(float &result, uint8_t oversamplingRate)
     return ret;
 }
 
-int16_t DpsClass::measurePressureOnce(float &result, uint8_t oversamplingRate, std::function<float(float)> transform)
+int16_t DirtyDPS::measurePressureOnce(float &result, uint8_t oversamplingRate, std::function<float(float)> transform)
 {
     // start the measurement
     int16_t ret = startMeasurePressureOnce(oversamplingRate);
@@ -375,12 +374,12 @@ int16_t DpsClass::measurePressureOnce(float &result, uint8_t oversamplingRate, s
     return ret;
 }
 
-int16_t DpsClass::startMeasurePressureOnce(void)
+int16_t DirtyDPS::startMeasurePressureOnce(void)
 {
     return startMeasurePressureOnce(m_prsOsr);
 }
 
-int16_t DpsClass::startMeasurePressureOnce(uint8_t oversamplingRate)
+int16_t DirtyDPS::startMeasurePressureOnce(uint8_t oversamplingRate)
 {
     // abort if initialization failed
     if (m_initFail)
@@ -404,7 +403,7 @@ int16_t DpsClass::startMeasurePressureOnce(uint8_t oversamplingRate)
     return setOpMode(CMD_PRS);
 }
 
-int16_t DpsClass::startMeasureTempCont(uint8_t measureRate, uint8_t oversamplingRate)
+int16_t DirtyDPS::startMeasureTempCont(uint8_t measureRate, uint8_t oversamplingRate)
 {
     // abort if initialization failed
     if (m_initFail)
@@ -432,14 +431,14 @@ int16_t DpsClass::startMeasureTempCont(uint8_t measureRate, uint8_t oversampling
         return DPS__FAIL_UNKNOWN;
     }
     // Start measuring in background mode
-    if (DpsClass::setOpMode(CONT_TMP))
+    if (setOpMode(CONT_TMP))
     {
         return DPS__FAIL_UNKNOWN;
     }
     return DPS__SUCCEEDED;
 }
 
-int16_t DpsClass::startMeasurePressureCont(uint8_t measureRate, uint8_t oversamplingRate)
+int16_t DirtyDPS::startMeasurePressureCont(uint8_t measureRate, uint8_t oversamplingRate)
 {
     // abort if initialization failed
     if (m_initFail)
@@ -465,14 +464,14 @@ int16_t DpsClass::startMeasurePressureCont(uint8_t measureRate, uint8_t oversamp
         return DPS__FAIL_UNKNOWN;
     }
     // Start measuring in background mode
-    if (DpsClass::setOpMode(CONT_PRS))
+    if (setOpMode(CONT_PRS))
     {
         return DPS__FAIL_UNKNOWN;
     }
     return DPS__SUCCEEDED;
 }
 
-int16_t DpsClass::startMeasureBothCont(uint8_t tempMr,
+int16_t DirtyDPS::startMeasureBothCont(uint8_t tempMr,
                                        uint8_t tempOsr,
                                        uint8_t prsMr,
                                        uint8_t prsOsr)
@@ -513,7 +512,7 @@ int16_t DpsClass::startMeasureBothCont(uint8_t tempMr,
     return DPS__SUCCEEDED;
 }
 
-int16_t DpsClass::standby(void)
+int16_t DirtyDPS::standby(void)
 {
     // abort if initialization failed
     if (m_initFail)
@@ -530,7 +529,7 @@ int16_t DpsClass::standby(void)
     return ret;
 }
 
-int16_t DpsClass::correctTemp(void)
+int16_t DirtyDPS::correctTemp(void)
 {
     if (m_initFail)
     {
@@ -551,24 +550,34 @@ int16_t DpsClass::correctTemp(void)
     return DPS__SUCCEEDED;
 }
 
-int16_t DpsClass::getIntStatusFifoFull(void)
+DirtyDPS::TemperatureCoefficients DirtyDPS::getTemperatureCoefficients() const
 {
-    return readByteBitfield(config_registers[INT_FLAG_FIFO]);
+    TemperatureCoefficients t{};
+    t.c0_half = static_cast<float>(m_c0Half);
+    t.c1 = static_cast<float>(m_c1);
+    t.oversampling = m_tempOsr;
+    t.scaling_divisor = scaling_facts[m_tempOsr];
+    return t;
 }
 
-int16_t DpsClass::getIntStatusTempReady(void)
+DirtyDPS::PressureCoefficients DirtyDPS::getPressureCoefficients() const
 {
-    return readByteBitfield(config_registers[INT_FLAG_TEMP]);
+    PressureCoefficients p{};
+    p.c00 = static_cast<float>(m_c00);
+    p.c10 = static_cast<float>(m_c10);
+    p.c01 = static_cast<float>(m_c01);
+    p.c11 = static_cast<float>(m_c11);
+    p.c20 = static_cast<float>(m_c20);
+    p.c21 = static_cast<float>(m_c21);
+    p.c30 = static_cast<float>(m_c30);
+    p.oversampling = m_prsOsr;
+    p.scaling_divisor = scaling_facts[m_prsOsr];
+    return p;
 }
 
-int16_t DpsClass::getIntStatusPrsReady(void)
-{
-    return readByteBitfield(config_registers[INT_FLAG_PRS]);
-}
+////////  Private/protected helpers  ////////
 
-////////  Declaration of private functions starts here  ////////
-
-int16_t DpsClass::setOpMode(uint8_t opMode)
+int16_t DirtyDPS::setOpMode(uint8_t opMode)
 {
     if (writeByteBitfield(opMode, config_registers[MSR_CTRL]) == -1)
     {
@@ -578,7 +587,22 @@ int16_t DpsClass::setOpMode(uint8_t opMode)
     return DPS__SUCCEEDED;
 }
 
-int16_t DpsClass::configTemp(uint8_t tempMr, uint8_t tempOsr)
+int16_t DirtyDPS::getIntStatusFifoFull(void)
+{
+    return readByteBitfield(config_registers[INT_FLAG_FIFO]);
+}
+
+int16_t DirtyDPS::getIntStatusTempReady(void)
+{
+    return readByteBitfield(config_registers[INT_FLAG_TEMP]);
+}
+
+int16_t DirtyDPS::getIntStatusPrsReady(void)
+{
+    return readByteBitfield(config_registers[INT_FLAG_PRS]);
+}
+
+int16_t DirtyDPS::configTemp(uint8_t tempMr, uint8_t tempOsr)
 {
     tempMr &= 0x07;
     tempOsr &= 0x07;
@@ -596,7 +620,7 @@ int16_t DpsClass::configTemp(uint8_t tempMr, uint8_t tempOsr)
     return DPS__SUCCEEDED;
 }
 
-int16_t DpsClass::configPressure(uint8_t prsMr, uint8_t prsOsr)
+int16_t DirtyDPS::configPressure(uint8_t prsMr, uint8_t prsOsr)
 {
     prsMr &= 0x07;
     prsOsr &= 0x07;
@@ -611,28 +635,32 @@ int16_t DpsClass::configPressure(uint8_t prsMr, uint8_t prsOsr)
     m_prsMr = prsMr;
     m_prsOsr = prsOsr;
     return DPS__SUCCEEDED;
-
 }
 
-int16_t DpsClass::enableFIFO()
+int16_t DirtyDPS::flushFIFO()
+{
+    return writeByteBitfield(1U, registers[FIFO_FL]);
+}
+
+int16_t DirtyDPS::enableFIFO()
 {
     return writeByteBitfield(1U, config_registers[FIFO_EN]);
 }
 
-int16_t DpsClass::disableFIFO()
+int16_t DirtyDPS::disableFIFO()
 {
     int16_t ret = flushFIFO();
     ret = writeByteBitfield(0U, config_registers[FIFO_EN]);
     return ret;
 }
 
-uint16_t DpsClass::calcBusyTime(uint16_t mr, uint16_t osr)
+uint16_t DirtyDPS::calcBusyTime(uint16_t mr, uint16_t osr)
 {
     // formula from datasheet (optimized)
     return ((uint32_t)20U << mr) + ((uint32_t)16U << (osr + mr));
 }
 
-int16_t DpsClass::getFIFOvalue(int32_t *value)
+int16_t DirtyDPS::getFIFOvalue(int32_t *value)
 {
     uint8_t buffer[DPS__RESULT_BLOCK_LENGTH] = {0};
 
@@ -644,15 +672,13 @@ int16_t DpsClass::getFIFOvalue(int32_t *value)
     return buffer[2] & 0x01;
 }
 
-int16_t DpsClass::readByte(uint8_t regAddress)
+int16_t DirtyDPS::readByte(uint8_t regAddress)
 {
-#ifndef DPS_DISABLESPI
-    // delegate to specialized function if Dps3xx is connected via SPI
+    // delegate to specialized function if connected via SPI
     if (m_SpiI2c == 0)
     {
         return readByteSPI(regAddress);
     }
-#endif
 
     m_i2cbus->beginTransmission(m_slaveAddress);
     m_i2cbus->write(regAddress);
@@ -668,8 +694,7 @@ int16_t DpsClass::readByte(uint8_t regAddress)
     }
 }
 
-#ifndef DPS_DISABLESPI
-int16_t DpsClass::readByteSPI(uint8_t regAddress)
+int16_t DirtyDPS::readByteSPI(uint8_t regAddress)
 {
     // this function is only made for communication via SPI
     if (m_SpiI2c != 0)
@@ -695,10 +720,8 @@ int16_t DpsClass::readByteSPI(uint8_t regAddress)
     // return received data
     return ret;
 }
-#endif
 
-#ifndef DPS_DISABLESPI
-int16_t DpsClass::readBlockSPI(RegBlock_t regBlock, uint8_t *buffer)
+int16_t DirtyDPS::readBlockSPI(RegBlock_t regBlock, uint8_t *buffer)
 {
     // this function is only made for communication via SPI
     if (m_SpiI2c != 0)
@@ -734,22 +757,19 @@ int16_t DpsClass::readBlockSPI(RegBlock_t regBlock, uint8_t *buffer)
     // return received data
     return regBlock.length;
 }
-#endif
 
-int16_t DpsClass::writeByte(uint8_t regAddress, uint8_t data)
+int16_t DirtyDPS::writeByte(uint8_t regAddress, uint8_t data)
 {
     return writeByte(regAddress, data, 0U);
 }
 
-int16_t DpsClass::writeByte(uint8_t regAddress, uint8_t data, uint8_t check)
+int16_t DirtyDPS::writeByte(uint8_t regAddress, uint8_t data, uint8_t check)
 {
-#ifndef DPS_DISABLESPI
-    // delegate to specialized function if Dps3xx is connected via SPI
+    // delegate to specialized function if connected via SPI
     if (m_SpiI2c == 0)
     {
         return writeByteSpi(regAddress, data, check);
     }
-#endif
     m_i2cbus->beginTransmission(m_slaveAddress);
     m_i2cbus->write(regAddress);          // Write Register number to buffer
     m_i2cbus->write(data);                // Write data to buffer
@@ -772,8 +792,7 @@ int16_t DpsClass::writeByte(uint8_t regAddress, uint8_t data, uint8_t check)
     }
 }
 
-#ifndef DPS_DISABLESPI
-int16_t DpsClass::writeByteSpi(uint8_t regAddress, uint8_t data, uint8_t check)
+int16_t DirtyDPS::writeByteSpi(uint8_t regAddress, uint8_t data, uint8_t check)
 {
     // this function is only made for communication via SPI
     if (m_SpiI2c != 0)
@@ -791,7 +810,7 @@ int16_t DpsClass::writeByteSpi(uint8_t regAddress, uint8_t data, uint8_t check)
     // send address with read command to Dps3xx
     m_spibus->transfer(regAddress | DPS3xx__SPI_WRITE_CMD);
 
-    // write register content from Dps3xx
+    // write register content to Dps3xx
     m_spibus->transfer(data);
 
     // disable ChipSelect for Dps3xx
@@ -817,14 +836,13 @@ int16_t DpsClass::writeByteSpi(uint8_t regAddress, uint8_t data, uint8_t check)
         return DPS__FAIL_UNKNOWN;
     }
 }
-#endif
 
-int16_t DpsClass::writeByteBitfield(uint8_t data, RegMask_t regMask)
+int16_t DirtyDPS::writeByteBitfield(uint8_t data, RegMask_t regMask)
 {
     return writeByteBitfield(data, regMask.regAddress, regMask.mask, regMask.shift, 0U);
 }
 
-int16_t DpsClass::writeByteBitfield(uint8_t data,
+int16_t DirtyDPS::writeByteBitfield(uint8_t data,
                                     uint8_t regAddress,
                                     uint8_t mask,
                                     uint8_t shift,
@@ -839,7 +857,7 @@ int16_t DpsClass::writeByteBitfield(uint8_t data,
     return writeByte(regAddress, ((uint8_t)old & ~mask) | ((data << shift) & mask), check);
 }
 
-int16_t DpsClass::readByteBitfield(RegMask_t regMask)
+int16_t DirtyDPS::readByteBitfield(RegMask_t regMask)
 {
     int16_t ret = readByte(regMask.regAddress);
     if (ret < 0)
@@ -849,15 +867,13 @@ int16_t DpsClass::readByteBitfield(RegMask_t regMask)
     return (((uint8_t)ret) & regMask.mask) >> regMask.shift;
 }
 
-int16_t DpsClass::readBlock(RegBlock_t regBlock, uint8_t *buffer)
+int16_t DirtyDPS::readBlock(RegBlock_t regBlock, uint8_t *buffer)
 {
-#ifndef DPS_DISABLESPI
-    // delegate to specialized function if Dps3xx is connected via SPI
+    // delegate to specialized function if connected via SPI
     if (m_SpiI2c == 0)
     {
         return readBlockSPI(regBlock, buffer);
     }
-#endif
     // do not read if there is no buffer
     if (buffer == NULL)
     {
@@ -877,7 +893,7 @@ int16_t DpsClass::readBlock(RegBlock_t regBlock, uint8_t *buffer)
     return ret;
 }
 
-void DpsClass::getTwosComplement(int32_t *raw, uint8_t length)
+void DirtyDPS::getTwosComplement(int32_t *raw, uint8_t length)
 {
     if (*raw & ((uint32_t)1 << (length - 1)))
     {
@@ -885,7 +901,7 @@ void DpsClass::getTwosComplement(int32_t *raw, uint8_t length)
     }
 }
 
-int16_t DpsClass::getRawResult(int32_t *raw, RegBlock_t reg)
+int16_t DirtyDPS::getRawResult(int32_t *raw, RegBlock_t reg)
 {
     uint8_t buffer[DPS__RESULT_BLOCK_LENGTH] = {0};
     if (readBlock(reg, buffer) != DPS__RESULT_BLOCK_LENGTH)
@@ -894,4 +910,238 @@ int16_t DpsClass::getRawResult(int32_t *raw, RegBlock_t reg)
     *raw = (uint32_t)buffer[0] << 16 | (uint32_t)buffer[1] << 8 | (uint32_t)buffer[2];
     getTwosComplement(raw, 24);
     return DPS__SUCCEEDED;
+}
+
+////////  DPS3xx-specific  ////////
+
+void DirtyDPS::init(void)
+{
+    int16_t prodId = readByteBitfield(registers[PROD_ID]);
+    if (prodId < 0)
+    {
+        // Connected device is not a Dps3xx
+        m_initFail = 1U;
+        return;
+    }
+    m_productID = prodId;
+
+    int16_t revId = readByteBitfield(registers[REV_ID]);
+    if (revId < 0)
+    {
+        m_initFail = 1U;
+        return;
+    }
+    m_revisionID = revId;
+
+    // find out which temperature sensor is calibrated with coefficients...
+    int16_t sensor = readByteBitfield(registers[TEMP_SENSORREC]);
+    if (sensor < 0)
+    {
+        m_initFail = 1U;
+        return;
+    }
+
+    //...and use this sensor for temperature measurement
+    m_tempSensor = sensor;
+    if (writeByteBitfield((uint8_t)sensor, registers[TEMP_SENSOR]) < 0)
+    {
+        m_initFail = 1U;
+        return;
+    }
+
+    // read coefficients
+    if (readcoeffs() < 0)
+    {
+        m_initFail = 1U;
+        return;
+    }
+
+    // set to standby for further configuration
+    standby();
+
+    // set measurement precision and rate to standard values;
+    configTemp(DPS__MEASUREMENT_RATE_4, DPS__OVERSAMPLING_RATE_8);
+    configPressure(DPS__MEASUREMENT_RATE_4, DPS__OVERSAMPLING_RATE_8);
+
+    // perform a first temperature measurement
+    // the most recent temperature will be saved internally
+    // and used for compensation when calculating pressure
+    float trash;
+    measureTempOnce(trash);
+
+    // make sure the Dps3xx is in standby after initialization
+    standby();
+
+    // Fix IC with a fuse bit problem, which lead to a wrong temperature
+    // Should not affect ICs without this problem
+    correctTemp();
+}
+
+int16_t DirtyDPS::readcoeffs(void)
+{
+    // TODO: remove magic number
+    uint8_t buffer[18];
+    // read COEF registers to buffer
+    int16_t ret = readBlock(coeffBlock, buffer);
+    if (!ret)
+        return DPS__FAIL_INIT_FAILED;
+
+    // compose coefficients from buffer content
+    m_c0Half = ((uint32_t)buffer[0] << 4) | (((uint32_t)buffer[1] >> 4) & 0x0F);
+    getTwosComplement(&m_c0Half, 12);
+    // c0 is only used as c0*0.5, so c0_half is calculated immediately
+    m_c0Half = m_c0Half / 2U;
+
+    // now do the same thing for all other coefficients
+    m_c1 = (((uint32_t)buffer[1] & 0x0F) << 8) | (uint32_t)buffer[2];
+    getTwosComplement(&m_c1, 12);
+    m_c00 = ((uint32_t)buffer[3] << 12) | ((uint32_t)buffer[4] << 4) | (((uint32_t)buffer[5] >> 4) & 0x0F);
+    getTwosComplement(&m_c00, 20);
+    m_c10 = (((uint32_t)buffer[5] & 0x0F) << 16) | ((uint32_t)buffer[6] << 8) | (uint32_t)buffer[7];
+    getTwosComplement(&m_c10, 20);
+
+    m_c01 = ((uint32_t)buffer[8] << 8) | (uint32_t)buffer[9];
+    getTwosComplement(&m_c01, 16);
+
+    m_c11 = ((uint32_t)buffer[10] << 8) | (uint32_t)buffer[11];
+    getTwosComplement(&m_c11, 16);
+    m_c20 = ((uint32_t)buffer[12] << 8) | (uint32_t)buffer[13];
+    getTwosComplement(&m_c20, 16);
+    m_c21 = ((uint32_t)buffer[14] << 8) | (uint32_t)buffer[15];
+    getTwosComplement(&m_c21, 16);
+    m_c30 = ((uint32_t)buffer[16] << 8) | (uint32_t)buffer[17];
+    getTwosComplement(&m_c30, 16);
+    return DPS__SUCCEEDED;
+}
+
+int16_t DirtyDPS::configTemp(uint8_t tempMr, uint8_t tempOsr)
+{
+    // generic config
+    tempMr &= 0x07;
+    tempOsr &= 0x07;
+    int16_t ret = writeByteBitfield(tempMr, config_registers[TEMP_MR]);
+    ret = writeByteBitfield(tempOsr, config_registers[TEMP_OSR]);
+    if (ret != DPS__SUCCEEDED)
+    {
+        return DPS__FAIL_UNKNOWN;
+    }
+    m_tempMr = tempMr;
+    m_tempOsr = tempOsr;
+
+    // DPS3xx-specific bits
+    writeByteBitfield(m_tempSensor, registers[TEMP_SENSOR]);
+    // set TEMP SHIFT ENABLE if oversampling rate higher than eight(2^3)
+    if (tempOsr > DPS3xx__OSR_SE)
+    {
+        ret = writeByteBitfield(1U, registers[TEMP_SE]);
+    }
+    else
+    {
+        ret = writeByteBitfield(0U, registers[TEMP_SE]);
+    }
+    return ret;
+}
+
+int16_t DirtyDPS::configPressure(uint8_t prsMr, uint8_t prsOsr)
+{
+    // generic config
+    prsMr &= 0x07;
+    prsOsr &= 0x07;
+    int16_t ret = writeByteBitfield(prsMr, config_registers[PRS_MR]);
+    ret = writeByteBitfield(prsOsr, config_registers[PRS_OSR]);
+    if (ret != DPS__SUCCEEDED)
+    {
+        return DPS__FAIL_UNKNOWN;
+    }
+    m_prsMr = prsMr;
+    m_prsOsr = prsOsr;
+
+    // DPS3xx-specific bits
+    if (prsOsr > DPS3xx__OSR_SE)
+    {
+        ret = writeByteBitfield(1U, registers[PRS_SE]);
+    }
+    else
+    {
+        ret = writeByteBitfield(0U, registers[PRS_SE]);
+    }
+    return ret;
+}
+
+float DirtyDPS::calcTemp(int32_t raw)
+{
+    float temp = raw;
+
+    // scale temperature according to scaling table and oversampling
+    temp /= scaling_facts[m_tempOsr];
+
+    // update last measured temperature
+    // it will be used for pressure compensation
+    m_lastTempScal = temp;
+
+    // Calculate compensated temperature
+    temp = m_c0Half + m_c1 * temp;
+
+    return temp;
+}
+
+float DirtyDPS::calcTemp(int32_t raw, std::function<float(float)> transform)
+{
+    float temp = raw;
+
+    // scale temperature according to scaling table and oversampling
+    temp /= scaling_facts[m_tempOsr];
+
+    // apply the transformation function
+    temp = transform(temp);
+
+    // update last measured temperature
+    // it will be used for pressure compensation
+    m_lastTempScal = temp;
+
+    // Calculate compensated temperature
+    temp = m_c0Half + m_c1 * temp;
+
+    return temp;
+}
+
+float DirtyDPS::calcPressure(int32_t raw)
+{
+    float prs = raw;
+
+    // scale pressure according to scaling table and oversampling
+    prs /= scaling_facts[m_prsOsr];
+
+    // Calculate compensated pressure
+    prs = m_c00 + prs * (m_c10 + prs * (m_c20 + prs * m_c30)) + m_lastTempScal * (m_c01 + prs * (m_c11 + prs * m_c21));
+
+    // return pressure
+    return prs;
+}
+
+float DirtyDPS::calcPressure(int32_t raw, std::function<float(float)> transform)
+{
+    float prs = raw;
+
+    // scale pressure according to scaling table and oversampling
+    prs /= scaling_facts[m_prsOsr];
+
+    // apply the transformation function
+    prs = transform(prs);
+
+    // Calculate compensated pressure
+    prs = m_c00 + prs * (m_c10 + prs * (m_c20 + prs * m_c30)) + m_lastTempScal * (m_c01 + prs * (m_c11 + prs * m_c21));
+
+    // return pressure
+    return prs;
+}
+
+int16_t DirtyDPS::setInterruptSources(uint8_t intr_source, uint8_t polarity)
+{
+    // Interrupts are not supported with 4 Wire SPI
+    if (!m_SpiI2c & !m_threeWire)
+    {
+        return DPS__FAIL_UNKNOWN;
+    }
+    return writeByteBitfield(intr_source, registers[INT_SEL]) || writeByteBitfield(polarity, registers[INT_HL]);
 }
