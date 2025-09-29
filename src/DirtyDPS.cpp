@@ -602,40 +602,7 @@ int16_t DirtyDPS::getIntStatusPrsReady(void)
     return readByteBitfield(config_registers[INT_FLAG_PRS]);
 }
 
-int16_t DirtyDPS::configTemp(uint8_t tempMr, uint8_t tempOsr)
-{
-    tempMr &= 0x07;
-    tempOsr &= 0x07;
-    // two accesses to the same register; for readability
-    int16_t ret = writeByteBitfield(tempMr, config_registers[TEMP_MR]);
-    ret = writeByteBitfield(tempOsr, config_registers[TEMP_OSR]);
 
-    // abort immediately on fail
-    if (ret != DPS__SUCCEEDED)
-    {
-        return DPS__FAIL_UNKNOWN;
-    }
-    m_tempMr = tempMr;
-    m_tempOsr = tempOsr;
-    return DPS__SUCCEEDED;
-}
-
-int16_t DirtyDPS::configPressure(uint8_t prsMr, uint8_t prsOsr)
-{
-    prsMr &= 0x07;
-    prsOsr &= 0x07;
-    int16_t ret = writeByteBitfield(prsMr, config_registers[PRS_MR]);
-    ret = writeByteBitfield(prsOsr, config_registers[PRS_OSR]);
-
-    // abort immediately on fail
-    if (ret != DPS__SUCCEEDED)
-    {
-        return DPS__FAIL_UNKNOWN;
-    }
-    m_prsMr = prsMr;
-    m_prsOsr = prsOsr;
-    return DPS__SUCCEEDED;
-}
 
 int16_t DirtyDPS::flushFIFO()
 {
