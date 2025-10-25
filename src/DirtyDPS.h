@@ -11,6 +11,15 @@
 class DirtyDPS
 {
 public:
+    // Temperature sensor source selector
+    // TEMP_SRC_ASIC: on-ASIC internal temperature sensor
+    // TEMP_SRC_MEMS: MEMS-layer temperature sensor (near pressure element)
+    // TEMP_SRC_AUTO: use the current default selection
+    enum TempSource : uint8_t {
+        TEMP_SRC_ASIC = 0,
+        TEMP_SRC_MEMS = 1,
+        TEMP_SRC_AUTO = 0xFF
+    };
     // Returned data structures
     struct TemperatureCoefficients {
         float c0_half;
@@ -57,6 +66,10 @@ public:
     int16_t measureTempOnce(float &result);
     int16_t measureTempOnce(float &result, uint8_t oversamplingRate);
     int16_t measureTempOnce(float &result, uint8_t oversamplingRate, std::function<float(float)> transform);
+    // One-shot temperature with sensor selection (temporary override)
+    int16_t measureTempOnce(float &result, TempSource sensor);
+    int16_t measureTempOnce(float &result, TempSource sensor, uint8_t oversamplingRate);
+    int16_t measureTempOnce(float &result, TempSource sensor, uint8_t oversamplingRate, std::function<float(float)> transform);
     int16_t startMeasureTempOnce(void);
     int16_t startMeasureTempOnce(uint8_t oversamplingRate);
 
@@ -87,6 +100,11 @@ public:
     // Device-specific helpers
     int16_t correctTemp(void);
     int16_t setInterruptSources(uint8_t intr_source, uint8_t polarity = 1);
+    // Temperature sensor selection (persistent)
+    // Sets which temperature sensor to use by default for temperature reads.
+    // Pressure compensation always uses the factory-recommended sensor.
+    int16_t setTempSource(TempSource sensor);
+    uint8_t getTempSource() const { return m_tempSensor; }
 
     // Coefficient accessors
     TemperatureCoefficients getTemperatureCoefficients() const;
@@ -125,6 +143,11 @@ protected:
 
     // last measured scaled temperature (necessary for pressure compensation)
     float m_lastTempScal;
+    float m_lastTempScalBySensor[2]; // [0]=ASIC, [1]=MEMS
+
+    // temperature sensor bookkeeping
+    uint8_t m_tempSensorRec;        // factory-recommended sensor for compensation
+    uint8_t m_currentTempSensor;    // sensor used by the in-flight temp read
 
     // bus specific
     uint8_t m_SpiI2c; // 0=SPI, 1=I2C

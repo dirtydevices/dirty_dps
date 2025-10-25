@@ -323,6 +323,9 @@ int16_t DirtyDPS::startMeasureTempOnce(uint8_t oversamplingRate)
         }
     }
 
+    // Record which temperature sensor will produce this reading
+    m_currentTempSensor = m_tempSensor;
+
     // set device to temperature measuring mode
     return setOpMode(CMD_TEMP);
 }
@@ -430,6 +433,8 @@ int16_t DirtyDPS::startMeasureTempCont(uint8_t measureRate, uint8_t oversampling
     {
         return DPS__FAIL_UNKNOWN;
     }
+    // Record which temperature sensor will produce these readings
+    m_currentTempSensor = m_tempSensor;
     // Start measuring in background mode
     if (setOpMode(CONT_TMP))
     {
@@ -504,6 +509,8 @@ int16_t DirtyDPS::startMeasureBothCont(uint8_t tempMr,
     {
         return DPS__FAIL_UNKNOWN;
     }
+    // Record which temperature sensor will produce temperature readings
+    m_currentTempSensor = m_tempSensor;
     // Start measuring in background mode
     if (setOpMode(CONT_BOTH))
     {
@@ -548,6 +555,92 @@ int16_t DirtyDPS::correctTemp(void)
     measureTempOnce(trash);
 
     return DPS__SUCCEEDED;
+}
+
+int16_t DirtyDPS::setTempSource(TempSource sensor)
+{
+    if (m_initFail)
+    {
+        return DPS__FAIL_INIT_FAILED;
+    }
+    uint8_t desired = (sensor == TEMP_SRC_AUTO) ? m_tempSensorRec : (static_cast<uint8_t>(sensor) & 0x01);
+    m_tempSensor = desired;
+    // Apply immediately to device
+    int16_t ret = writeByteBitfield(desired, registers[TEMP_SENSOR]);
+    if (ret != DPS__SUCCEEDED)
+    {
+        return DPS__FAIL_UNKNOWN;
+    }
+    return DPS__SUCCEEDED;
+}
+
+int16_t DirtyDPS::measureTempOnce(float &result, TempSource sensor)
+{
+    return measureTempOnce(result, sensor, m_tempOsr);
+}
+
+int16_t DirtyDPS::measureTempOnce(float &result, TempSource sensor, uint8_t oversamplingRate)
+{
+    if (m_initFail)
+    {
+        return DPS__FAIL_INIT_FAILED;
+    }
+
+    // Save and temporarily override default temp sensor
+    uint8_t prevDefault = m_tempSensor;
+    uint8_t desired = (sensor == TEMP_SRC_AUTO) ? m_tempSensor : (static_cast<uint8_t>(sensor) & 0x01);
+    m_tempSensor = desired;
+
+    // If OSR is unchanged, configTemp won't be called, so explicitly set register
+    if (oversamplingRate == m_tempOsr)
+    {
+        if (writeByteBitfield(desired, registers[TEMP_SENSOR]) != DPS__SUCCEEDED)
+        {
+            m_tempSensor = prevDefault;
+            return DPS__FAIL_UNKNOWN;
+        }
+    }
+
+    // Tell calcTemp which sensor this read belongs to
+    m_currentTempSensor = desired;
+
+    int16_t ret = measureTempOnce(result, oversamplingRate);
+
+    // Restore default and device TEMP_SENSOR register
+    m_tempSensor = prevDefault;
+    writeByteBitfield(prevDefault, registers[TEMP_SENSOR]);
+
+    return ret;
+}
+
+int16_t DirtyDPS::measureTempOnce(float &result, TempSource sensor, uint8_t oversamplingRate, std::function<float(float)> transform)
+{
+    if (m_initFail)
+    {
+        return DPS__FAIL_INIT_FAILED;
+    }
+
+    uint8_t prevDefault = m_tempSensor;
+    uint8_t desired = (sensor == TEMP_SRC_AUTO) ? m_tempSensor : (static_cast<uint8_t>(sensor) & 0x01);
+    m_tempSensor = desired;
+
+    if (oversamplingRate == m_tempOsr)
+    {
+        if (writeByteBitfield(desired, registers[TEMP_SENSOR]) != DPS__SUCCEEDED)
+        {
+            m_tempSensor = prevDefault;
+            return DPS__FAIL_UNKNOWN;
+        }
+    }
+
+    m_currentTempSensor = desired;
+
+    int16_t ret = measureTempOnce(result, oversamplingRate, transform);
+
+    m_tempSensor = prevDefault;
+    writeByteBitfield(prevDefault, registers[TEMP_SENSOR]);
+
+    return ret;
 }
 
 DirtyDPS::TemperatureCoefficients DirtyDPS::getTemperatureCoefficients() const
@@ -909,7 +1002,13 @@ void DirtyDPS::init(void)
     }
 
     //...and use this sensor for temperature measurement
-    m_tempSensor = sensor;
+    m_tempSensorRec = static_cast<uint8_t>(sensor) & 0x01;
+    m_tempSensor = m_tempSensorRec;
+    m_currentTempSensor = m_tempSensor;
+    // initialize per-sensor scaled temperature caches
+    m_lastTempScalBySensor[0] = 0.0f;
+    m_lastTempScalBySensor[1] = 0.0f;
+    m_lastTempScal = 0.0f;
     if (writeByteBitfield((uint8_t)sensor, registers[TEMP_SENSOR]) < 0)
     {
         m_initFail = 1U;
@@ -1042,9 +1141,10 @@ float DirtyDPS::calcTemp(int32_t raw)
     // scale temperature according to scaling table and oversampling
     temp /= scaling_facts[m_tempOsr];
 
-    // update last measured temperature
-    // it will be used for pressure compensation
-    m_lastTempScal = temp;
+    // update per-sensor scaled temperature and mirror the recommended sensor
+    uint8_t idx = (m_currentTempSensor & 0x01);
+    m_lastTempScalBySensor[idx] = temp;
+    m_lastTempScal = m_lastTempScalBySensor[m_tempSensorRec & 0x01];
 
     // Calculate compensated temperature
     temp = m_c0Half + m_c1 * temp;
@@ -1062,9 +1162,10 @@ float DirtyDPS::calcTemp(int32_t raw, std::function<float(float)> transform)
     // apply the transformation function
     temp = transform(temp);
 
-    // update last measured temperature
-    // it will be used for pressure compensation
-    m_lastTempScal = temp;
+    // update per-sensor scaled temperature and mirror the recommended sensor
+    uint8_t idx = (m_currentTempSensor & 0x01);
+    m_lastTempScalBySensor[idx] = temp;
+    m_lastTempScal = m_lastTempScalBySensor[m_tempSensorRec & 0x01];
 
     // Calculate compensated temperature
     temp = m_c0Half + m_c1 * temp;
