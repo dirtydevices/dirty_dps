@@ -64,7 +64,7 @@ class DirtyDPS {
     // One-shot temperature
     int16_t measureTempOnce(float &result);
     int16_t measureTempOnce(float &result, uint8_t oversamplingRate);
-    int16_t measureTempOnce(float &result, float &rawResult, uint8_t oversamplingRate);
+    int16_t measureTempOnce(float &result, int32_t &rawResult, uint8_t oversamplingRate);
 
     int16_t startMeasureTempOnce(void);
     int16_t startMeasureTempOnce(uint8_t oversamplingRate);
@@ -72,14 +72,14 @@ class DirtyDPS {
     // One-shot pressure
     int16_t measurePressureOnce(float &result);
     int16_t measurePressureOnce(float &result, uint8_t oversamplingRate);
-    int16_t measurePressureOnce(float &result, float &rawResult, uint8_t oversamplingRate);
+    int16_t measurePressureOnce(float &result, int32_t &rawResult, uint8_t oversamplingRate);
 
     int16_t startMeasurePressureOnce(void);
     int16_t startMeasurePressureOnce(uint8_t oversamplingRate);
 
     // Get single result (based on last command)
     int16_t getSingleResult(float &result);
-    int16_t getSingleResult(float &result, float &rawResult);
+    int16_t getSingleResult(float &result, int32_t &rawResult);
 
     // Continuous modes
     int16_t startMeasureTempCont(uint8_t measureRate, uint8_t oversamplingRate);

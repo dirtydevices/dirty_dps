@@ -161,7 +161,7 @@ int16_t DirtyDPS::getSingleResult(float &result) {
     return DPS__FAIL_UNKNOWN;
 }
 
-int16_t DirtyDPS::getSingleResult(float &result, float &rawResult) {
+int16_t DirtyDPS::getSingleResult(float &result, int32_t &rawResult) {
     // abort if initialization failed
     if (m_initFail) {
         return DPS__FAIL_INIT_FAILED;
@@ -193,12 +193,12 @@ int16_t DirtyDPS::getSingleResult(float &result, float &rawResult) {
                 case CMD_TEMP: // temperature
                     getRawResult(&raw_val, registerBlocks[TEMP]);
                     result = calcTemp(raw_val);
-                    rawResult = static_cast<float>(raw_val);
+                    rawResult = raw_val;
                     return DPS__SUCCEEDED;
                 case CMD_PRS: // pressure
                     getRawResult(&raw_val, registerBlocks[PRS]);
                     result = calcPressure(raw_val);
-                    rawResult = static_cast<float>(raw_val);
+                    rawResult = raw_val;
                     return DPS__SUCCEEDED;
                 default:
                     return DPS__FAIL_UNKNOWN; // should already be filtered above
@@ -227,7 +227,7 @@ int16_t DirtyDPS::measureTempOnce(float &result, uint8_t oversamplingRate) {
     return ret;
 }
 
-int16_t DirtyDPS::measureTempOnce(float &result, float &rawResult, uint8_t oversamplingRate) {
+int16_t DirtyDPS::measureTempOnce(float &result, int32_t &rawResult, uint8_t oversamplingRate) {
     // Start measurement
     int16_t ret = startMeasureTempOnce(oversamplingRate);
     if (ret != DPS__SUCCEEDED) {
@@ -291,7 +291,7 @@ int16_t DirtyDPS::measurePressureOnce(float &result, uint8_t oversamplingRate) {
     return ret;
 }
 
-int16_t DirtyDPS::measurePressureOnce(float &result, float &rawResult, uint8_t oversamplingRate) {
+int16_t DirtyDPS::measurePressureOnce(float &result, int32_t &rawResult, uint8_t oversamplingRate) {
     // start the measurement
     int16_t ret = startMeasurePressureOnce(oversamplingRate);
     if (ret != DPS__SUCCEEDED) {
