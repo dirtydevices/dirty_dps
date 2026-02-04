@@ -870,36 +870,6 @@ float DirtyDPS::calcTemp(int32_t raw) {
     return temp;
 }
 
-float DirtyDPS::calcTemp(int32_t raw) {
-    float temp = raw;
-
-    // scale temperature according to scaling table and oversampling
-    temp /= scaling_facts[m_tempOsr];
-
-    // update per-sensor scaled temperature and mirror the recommended sensor
-    uint8_t idx = (m_currentTempSensor & 0x01);
-    m_lastTempScalBySensor[idx] = temp;
-    m_lastTempScal = m_lastTempScalBySensor[m_tempSensorRec & 0x01];
-
-    // Calculate compensated temperature
-    temp = m_c0Half + m_c1 * temp;
-
-    return temp;
-}
-
-float DirtyDPS::calcPressure(int32_t raw) {
-    float prs = raw;
-
-    // scale pressure according to scaling table and oversampling
-    prs /= scaling_facts[m_prsOsr];
-
-    // Calculate compensated pressure
-    prs = m_c00 + prs * (m_c10 + prs * (m_c20 + prs * m_c30)) + m_lastTempScal * (m_c01 + prs * (m_c11 + prs * m_c21));
-
-    // return pressure
-    return prs;
-}
-
 float DirtyDPS::calcPressure(int32_t raw) {
     float prs = raw;
 
